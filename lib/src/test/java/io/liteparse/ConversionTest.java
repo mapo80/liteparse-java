@@ -11,8 +11,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * End-to-end conversion tests: verify that LiteParse correctly turns the
@@ -49,6 +51,7 @@ class ConversionTest {
     }
 
     @Test
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void convertsImageAndRunsOcr() throws Exception {
         assumeTrue(onPath("magick", "convert"),
                 "ImageMagick not on PATH — skipping image conversion test");
@@ -62,6 +65,7 @@ class ConversionTest {
     }
 
     @Test
+    @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void convertsOfficeDocument() throws Exception {
         assumeTrue(onPath("soffice", "libreoffice"),
                 "LibreOffice not on PATH — skipping Office conversion test");

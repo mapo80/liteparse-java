@@ -107,11 +107,11 @@ jobs:
         shell: pwsh
         run: pwsh scripts/stage-natives.ps1 -Target ${{ matrix.target }} -Classifier ${{ matrix.classifier }} -OutDir native-staging/${{ matrix.classifier }}
 
-      - name: Tool versions
+      - name: Tool presence (no --version: soffice --version hangs on Windows)
         shell: bash
         run: |
-          echo "soffice:"; (soffice --version || libreoffice --version) 2>&1 | head -1 || echo "  not found"
-          echo "imagemagick:"; (magick --version || convert --version) 2>&1 | head -1 || echo "  not found"
+          echo "On PATH:"
+          command -v soffice libreoffice magick convert 2>/dev/null || true
 
       - name: Run conversion tests
         shell: bash
