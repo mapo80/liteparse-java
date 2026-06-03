@@ -140,20 +140,11 @@ jobs:
           find native-staging -maxdepth 1 -mindepth 1 -type d | sort
           find native-staging -type f | sort
 
-      - name: Assemble jars (API + per-platform native jars + sources + javadoc)
+      - name: Assemble jars (API + per-platform self-contained bundles + sources + javadoc)
         run: ./gradlew :lib:assemble -x test
 
       - name: List built artifacts
         run: ls -la lib/build/libs
-
-      - name: Publish to Maven Central
-        if: ${{ !inputs.dry-run }}
-        env:
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-        run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository -x test
 
       - name: Create git tag
         if: ${{ !inputs.dry-run }}

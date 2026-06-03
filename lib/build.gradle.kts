@@ -1,7 +1,8 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+
 plugins {
     `java-library`
-    `maven-publish`
-    signing
+    id("com.gradleup.shadow") version "8.3.5"
 }
 
 val moduleArtifactId = "liteparse-java"
@@ -53,16 +54,21 @@ tasks.register<JavaExec>("runCli") {
     args = if (raw.isBlank()) emptyList() else raw.trim().split(Regex("\\s+"))
 }
 
+// The generic shadowJar (no natives) would be misleading; we build per-platform bundles instead.
+tasks.named<ShadowJar>("shadowJar") { enabled = false }
+
 // ---------------------------------------------------------------------------
-// Per-platform native jars (Maven classifiers).
+// Per-platform self-contained "bundle" jars (GitHub Release distribution).
 //
 // Each `native-staging/<classifier>/` directory (populated by CI from the
-// per-platform build artifacts) becomes a `liteparse-java-<classifier>.jar`
-// containing `io/liteparse/native/<classifier>/**` plus a `manifest` file
-// listing the bundled files (read by NativeLoader at runtime).
+// per-platform build artifacts) yields a fat jar:
+//   liteparse-java-bundle-<classifier>-<version>.jar
+// containing the Java classes + a relocated copy of Jackson + the native files
+// for that platform (under io/liteparse/native/<classifier>/ with a manifest).
+// A consumer just drops this single jar on the classpath — no other deps.
 // ---------------------------------------------------------------------------
 val stagingDir = rootProject.layout.projectDirectory.dir("native-staging").asFile
-val nativeJarTasks = mutableListOf<TaskProvider<Jar>>()
+val bundleJarTasks = mutableListOf<TaskProvider<ShadowJar>>()
 
 if (stagingDir.isDirectory) {
     stagingDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
@@ -83,62 +89,26 @@ if (stagingDir.isDirectory) {
             }
         }
 
-        val jarTask = tasks.register<Jar>("nativeJar-$classifier") {
+        val bundle = tasks.register<ShadowJar>("bundleJar-$classifier") {
+            group = "build"
+            description = "Self-contained jar for $classifier (classes + Jackson + natives)."
             dependsOn(manifestTask)
-            archiveBaseName.set(moduleArtifactId)
+            archiveBaseName.set("liteparse-java-bundle")
             archiveClassifier.set(classifier)
-            into("io/liteparse/native/$classifier") {
-                from(dir)
-                from(manifestTask.map { it.outputs.files.singleFile })
+
+            from(sourceSets["main"].output)
+            configurations = listOf(project.configurations["runtimeClasspath"])
+            // Relocate Jackson so the bundle never clashes with a consumer's own copy.
+            relocate("com.fasterxml.jackson", "io.liteparse.shaded.jackson")
+            mergeServiceFiles()
+
+            from(dir) { into("io/liteparse/native/$classifier") }
+            from(manifestTask.map { it.outputs.files.singleFile }) {
+                into("io/liteparse/native/$classifier")
             }
         }
-        nativeJarTasks.add(jarTask)
+        bundleJarTasks.add(bundle)
     }
 }
 
-tasks.named("assemble") { dependsOn(nativeJarTasks) }
-
-// ---------------------------------------------------------------------------
-// Publishing
-// ---------------------------------------------------------------------------
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            artifactId = moduleArtifactId
-            from(components["java"])
-            nativeJarTasks.forEach { artifact(it) }
-
-            pom {
-                name.set(providers.gradleProperty("pomName"))
-                description.set(providers.gradleProperty("pomDescription"))
-                url.set(providers.gradleProperty("pomUrl"))
-                licenses {
-                    license {
-                        name.set(providers.gradleProperty("pomLicenseName"))
-                        url.set(providers.gradleProperty("pomLicenseUrl"))
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("liteparse-java")
-                        name.set("LiteParse Java contributors")
-                    }
-                }
-                scm {
-                    url.set(providers.gradleProperty("pomScmUrl"))
-                    connection.set(providers.gradleProperty("pomScmUrl").map { "scm:git:$it.git" })
-                }
-            }
-        }
-    }
-}
-
-signing {
-    val key = providers.environmentVariable("SIGNING_KEY").orNull
-    val password = providers.environmentVariable("SIGNING_PASSWORD").orNull
-    isRequired = key != null && key.isNotBlank()
-    if (isRequired) {
-        useInMemoryPgpKeys(key, password)
-        sign(publishing.publications["maven"])
-    }
-}
+tasks.named("assemble") { dependsOn(bundleJarTasks) }

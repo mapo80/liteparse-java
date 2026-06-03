@@ -36,45 +36,60 @@ This binding wraps the core `liteparse` Rust crate via JNI, exactly like the off
 
 ## Installation
 
-The library is split into a small pure-Java artifact and one native artifact per platform
-(selected with a Maven **classifier**, the same model used by JavaCPP, LWJGL and ONNX Runtime).
-Add the main dependency plus the native artifact(s) for the platform(s) you run on.
+LiteParse for Java is distributed as **GitHub Release assets** (not on Maven Central). Each
+release ships a **self-contained, single-jar bundle per platform**: it already contains the
+Java API, its dependency (Jackson, shaded), and the native binaries (JNI library + PDFium +
+`eng.traineddata`). Download the one for your platform, put it on the classpath, done.
 
-### Gradle (Kotlin DSL)
+### Self-contained bundle (recommended)
+
+Pick `liteparse-java-bundle-<version>-<classifier>.jar` for your platform from the
+[latest release](https://github.com/mapo80/liteparse-java/releases/latest):
+
+| Platform | classifier |
+|----------|------------|
+| Linux x86_64    | `linux-x86_64`    |
+| Linux arm64     | `linux-aarch64`   |
+| macOS x86_64    | `macos-x86_64`    |
+| macOS arm64     | `macos-aarch64`   |
+| Windows x86_64  | `windows-x86_64`  |
+| Windows arm64   | `windows-aarch64` |
+
+```bash
+# example: Linux x86_64
+curl -fsSL -o liteparse-java-bundle.jar \
+  https://github.com/mapo80/liteparse-java/releases/latest/download/liteparse-java-bundle-2.0.5-linux-x86_64.jar
+
+# run your app with the bundle on the classpath
+java -cp "liteparse-java-bundle.jar:your-app.jar" com.example.App
+```
+
+Use it as a local file dependency:
 
 ```kotlin
+// Gradle (Kotlin DSL)
 dependencies {
-    implementation("io.github.mapo80:liteparse-java:2.0.5")
-
-    // Native binaries for your platform (add more for cross-platform deployments):
-    runtimeOnly("io.github.mapo80:liteparse-java:2.0.5:linux-x86_64")
-    // runtimeOnly("io.github.mapo80:liteparse-java:2.0.5:macos-aarch64")
-    // runtimeOnly("io.github.mapo80:liteparse-java:2.0.5:windows-x86_64")
+    implementation(files("libs/liteparse-java-bundle-2.0.5-linux-x86_64.jar"))
 }
 ```
 
-### Maven
-
-```xml
-<dependency>
-  <groupId>io.github.mapo80</groupId>
-  <artifactId>liteparse-java</artifactId>
-  <version>2.0.5</version>
-</dependency>
-
-<!-- Native binaries for your platform -->
-<dependency>
-  <groupId>io.github.mapo80</groupId>
-  <artifactId>liteparse-java</artifactId>
-  <version>2.0.5</version>
-  <classifier>linux-x86_64</classifier>
-  <scope>runtime</scope>
-</dependency>
+```bash
+# Maven: install the bundle into your local/internal repository
+mvn install:install-file \
+  -Dfile=liteparse-java-bundle-2.0.5-linux-x86_64.jar \
+  -DgroupId=io.github.mapo80 -DartifactId=liteparse-java -Dversion=2.0.5 -Dpackaging=jar
 ```
 
-> **Note on coordinates:** the `groupId` `io.github.mapo80` is auto-verifiable on Maven Central
-> (Central Portal) for the owner of the `github.com/mapo80` account. Change it in
-> `gradle.properties` if you publish under a different namespace.
+> For multi-platform deployments, ship the bundle matching each target platform (or bundle
+> several and let the loader pick the right one — the native loader selects the binaries for the
+> current OS/arch from `io/liteparse/native/<classifier>/` on the classpath).
+
+### Advanced: plain API jar
+
+`liteparse-java-<version>.jar` contains only the Java classes (no natives, no Jackson). Use it
+if you manage dependencies yourself: add `com.fasterxml.jackson.core:jackson-databind`, and make
+the native library available either by putting a bundle jar's resources on the classpath or via
+`-Dliteparse.native.dir=<dir>` (a directory containing the JNI library + `libpdfium`).
 
 ## Usage
 
@@ -237,12 +252,12 @@ native library and `libpdfium` with `-Dliteparse.native.dir=/path/to/dir`.
 
 ## Releasing
 
-`.github/workflows/release-java.yml` (manual `workflow_dispatch`) builds the native library
-on all six platforms, assembles the API jar plus one native jar per platform, and publishes
-to Maven Central. Run it with `dry-run: true` first to validate the artifacts. Required
-repository secrets: `OSSRH_USERNAME`, `OSSRH_PASSWORD`, `SIGNING_KEY` (ASCII-armored GPG
-private key), `SIGNING_PASSWORD`. See **[RELEASING.md](RELEASING.md)** for the full
-step-by-step (namespace verification, GPG key, secrets, dry-run & publish).
+`.github/workflows/release-java.yml` (manual `workflow_dispatch`) builds the native library on
+all six platforms, assembles the plain API jar + sources + javadoc + the six self-contained
+bundle jars, and attaches them to a **GitHub Release**. No Maven Central / Sonatype account, GPG
+key, or secrets are required. Run it with `dry-run: true` first to validate the artifacts, then
+with `dry-run: false` to tag and publish the release. See **[RELEASING.md](RELEASING.md)** for
+the step-by-step.
 
 `.github/workflows/ci.yml` builds and tests on every platform for pushes and pull requests.
 
