@@ -210,7 +210,8 @@ native library and `libpdfium` with `-Dliteparse.native.dir=/path/to/dir`.
 on all six platforms, assembles the API jar plus one native jar per platform, and publishes
 to Maven Central. Run it with `dry-run: true` first to validate the artifacts. Required
 repository secrets: `OSSRH_USERNAME`, `OSSRH_PASSWORD`, `SIGNING_KEY` (ASCII-armored GPG
-private key), `SIGNING_PASSWORD`.
+private key), `SIGNING_PASSWORD`. See **[RELEASING.md](RELEASING.md)** for the full
+step-by-step (namespace verification, GPG key, secrets, dry-run & publish).
 
 `.github/workflows/ci.yml` builds and tests on every platform for pushes and pull requests.
 
