@@ -41,6 +41,18 @@ tasks.test {
     testLogging { events("passed", "skipped", "failed") }
 }
 
+// Run the bundled CLI for manual testing:
+//   ./gradlew :lib:runCli -PnativeDir=<dir> -PcliArgs="parse file.pdf --text"
+tasks.register<JavaExec>("runCli") {
+    group = "application"
+    description = "Run the LiteParse CLI (io.liteparse.cli.Main)."
+    mainClass.set("io.liteparse.cli.Main")
+    classpath = sourceSets["main"].runtimeClasspath
+    (findProperty("nativeDir") as String?)?.let { systemProperty("liteparse.native.dir", it) }
+    val raw = (findProperty("cliArgs") as String?) ?: ""
+    args = if (raw.isBlank()) emptyList() else raw.trim().split(Regex("\\s+"))
+}
+
 // ---------------------------------------------------------------------------
 // Per-platform native jars (Maven classifiers).
 //

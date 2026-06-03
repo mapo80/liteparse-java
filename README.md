@@ -139,6 +139,37 @@ List<TextItem> matches = LiteParse.searchItems(items, "Invoice Total", false);
 
 `parser.getConfig()` returns the fully-resolved configuration.
 
+## Command-line tool
+
+A small CLI (`io.liteparse.cli.Main`) ships inside the library jar for trying the library by
+hand. It mirrors the upstream `lit` commands.
+
+```
+parse <file> [--json|--text] [--no-ocr] [--ocr-language LANG]
+             [--max-pages N] [--target-pages 1-5,10] [--dpi DPI] [--password PW] [-o OUT]
+screenshot <file> [-o DIR] [--pages 1,3,5-7] [--dpi DPI] [--password PW]
+search <file> <phrase> [--case-sensitive] [--no-ocr]
+```
+
+Run it from a checkout via Gradle (point `-PnativeDir` at a directory containing the built
+native library + `libpdfium`, e.g. `rust/target/<triple>/release`):
+
+```bash
+./gradlew :lib:runCli -PnativeDir="$PWD/rust/target/release" \
+    -PcliArgs="parse document.pdf --text"
+./gradlew :lib:runCli -PnativeDir=... -PcliArgs="screenshot document.pdf -o shots --pages 1,2"
+./gradlew :lib:runCli -PnativeDir=... -PcliArgs="search document.pdf Invoice --no-ocr"
+```
+
+Or run it from the published jars on the classpath:
+
+```bash
+java -cp "liteparse-java.jar:liteparse-java-linux-x86_64.jar:jackson-*.jar" \
+    io.liteparse.cli.Main parse document.pdf --json
+```
+
+`parse` prints plain text by default (use `--json` for the full structured result).
+
 ## OCR
 
 The built-in **Tesseract** engine is compiled into the native library and `eng.traineddata`
