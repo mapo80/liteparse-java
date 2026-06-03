@@ -6,6 +6,11 @@ by the manual workflow [`.github/workflows/release-java.yml`](.github/workflows/
 which builds the native library on all six platforms, assembles the jars, and attaches them to a
 GitHub Release.
 
+**Release gate:** on every platform the workflow first runs the full test suite — including the
+PDF / image+OCR / Office conversion checks (LibreOffice + ImageMagick are installed) — and the
+`assemble-publish` job depends on all six build jobs. **If any test fails on any platform, the
+release is not finalized**: no tag and no GitHub Release are created.
+
 ## What a release contains
 
 For version `X.Y.Z`, the GitHub Release `java-vX.Y.Z` gets these assets:
