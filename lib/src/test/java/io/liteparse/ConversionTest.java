@@ -40,6 +40,24 @@ class ConversionTest {
     private static final boolean IS_WINDOWS =
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
 
+    private static final boolean IS_ARM = isArm();
+
+    /**
+     * Image -> PDF on the Windows/ARM64 runner goes through an x64-emulated
+     * ImageMagick, which historically had an unreliable PDF delegate. The
+     * dedicated {@code win-arm64.yml} pipeline installs a working tool-chain and
+     * sets this flag to prove the conversion actually runs; once that pipeline is
+     * green the flag is the only thing standing between Win/ARM64 and the rest of
+     * the matrix.
+     */
+    private static final boolean FORCE_IMAGE_CONVERSION =
+            Boolean.getBoolean("liteparse.forceImageConversion");
+
+    private static boolean isArm() {
+        String arch = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
+        return arch.contains("aarch64") || arch.contains("arm");
+    }
+
     @Test
     void parsesPdfNatively() throws Exception {
         Path pdf = extract("sample.pdf");
@@ -54,12 +72,13 @@ class ConversionTest {
     @Test
     @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void convertsImageAndRunsOcr() throws Exception {
-        // ImageMagick's PDF delegate (Ghostscript) is not reliably available on the
-        // Windows/ARM64 runner (x64 emulation), so image->PDF is skipped there.
-        assumeFalse(IS_WINDOWS && (System.getProperty("os.arch", "").toLowerCase(Locale.ROOT)
-                        .contains("aarch64") || System.getProperty("os.arch", "").toLowerCase(Locale.ROOT)
-                        .contains("arm")),
-                "image->PDF conversion is unreliable on Windows/ARM64");
+        // ImageMagick's PDF delegate has historically been unreliable on the
+        // Windows/ARM64 runner (x64 emulation), so image->PDF is skipped there
+        // unless the dedicated win-arm64.yml pipeline forces it on via
+        // -PforceImageConversion (which also installs a working tool-chain).
+        assumeFalse(IS_WINDOWS && IS_ARM && !FORCE_IMAGE_CONVERSION,
+                "image->PDF conversion is unreliable on Windows/ARM64 "
+                        + "(set -PforceImageConversion=true to exercise it)");
         assumeTrue(onPath("magick", "convert"),
                 "ImageMagick not on PATH — skipping image conversion test");
         Path image = extract("receipt.png");
