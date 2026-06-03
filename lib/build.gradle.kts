@@ -45,11 +45,6 @@ tasks.test {
     // For local dev / CI: point at a directory that already contains the native
     // library + libpdfium (+ tessdata). Passed via `-PnativeDir=...`.
     (findProperty("nativeDir") as String?)?.let { systemProperty("liteparse.native.dir", it) }
-    // Force the image->PDF conversion test to run on Windows/ARM64 (normally
-    // skipped). Used by the dedicated win-arm64.yml pipeline: `-PforceImageConversion=true`.
-    (findProperty("forceImageConversion") as String?)?.let {
-        systemProperty("liteparse.forceImageConversion", it)
-    }
     testLogging { events("passed", "skipped", "failed") }
 }
 
