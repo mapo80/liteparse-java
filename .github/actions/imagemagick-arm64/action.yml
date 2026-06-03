@@ -1,0 +1,54 @@
+name: "Install ImageMagick (native ARM64)"
+description: >-
+  Download a pinned, native Windows/ARM64 ImageMagick portable build from
+  GitHub Releases and add it to PATH. Avoids Chocolatey's x64-only package
+  (emulated, and its Ghostscript dependency hangs the InnoSetup/AHK installer
+  under emulation). ImageMagick writes raster->PDF natively, so no Ghostscript
+  is needed.
+inputs:
+  version:
+    description: "ImageMagick release tag (also the version in the asset name)."
+    required: false
+    default: "7.1.2-24"
+runs:
+  using: "composite"
+  steps:
+    - name: Download + extract ImageMagick (native ARM64, portable)
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $ver = "${{ inputs.version }}"
+        $zip = "ImageMagick-$ver-portable-Q16-arm64.7z"
+        $url = "https://github.com/ImageMagick/ImageMagick/releases/download/$ver/$zip"
+        $archive = Join-Path $env:RUNNER_TEMP $zip
+        $dest = Join-Path $env:RUNNER_TEMP "imagemagick-arm64"
+        Write-Host "Downloading $url"
+        Invoke-WebRequest -Uri $url -OutFile $archive
+        # 7-Zip is preinstalled on GitHub Windows runners. Portable build is a .7z.
+        7z x $archive "-o$dest" -y | Out-Null
+        # Layout-agnostic: locate magick.exe wherever it landed and add its dir to PATH.
+        $magick = Get-ChildItem -Path $dest -Recurse -Filter magick.exe | Select-Object -First 1
+        if (-not $magick) { Write-Error "magick.exe not found after extracting $zip"; exit 1 }
+        $bindir = $magick.DirectoryName
+        Write-Host "ImageMagick bin dir: $bindir"
+        $bindir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        # Deterministically verify the binary is native ARM64 via its PE machine field
+        # (0xAA64 = ARM64, 0x8664 = x64, 0x014C = x86) — independent of version-string text.
+        $fs = [System.IO.File]::OpenRead($magick.FullName)
+        try {
+          $buf = New-Object byte[] 1024
+          [void]$fs.Read($buf, 0, 1024)
+        } finally { $fs.Close() }
+        $peOffset = [BitConverter]::ToInt32($buf, 0x3C)
+        $machine = [BitConverter]::ToUInt16($buf, $peOffset + 4)
+        Write-Host ("magick.exe PE machine: 0x{0:X4}" -f $machine)
+        if ($machine -ne 0xAA64) {
+          Write-Error ("Expected native ARM64 (0xAA64) but magick.exe is 0x{0:X4}" -f $machine)
+          exit 1
+        }
+    - name: Verify ImageMagick on PATH
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Continue'
+        & magick -version
+        if ($LASTEXITCODE -ne 0) { Write-Error "magick -version failed (exit $LASTEXITCODE)"; exit 1 }

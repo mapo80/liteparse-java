@@ -1,17 +1,21 @@
 name: Win/ARM64 conversion
 
 # Dedicated pipeline for the one platform where end-to-end conversion was not
-# fully exercised: Windows on ARM64. The image -> PDF path runs through an
-# x64-emulated ImageMagick on the windows-11-arm runner and used to be skipped
-# (see ConversionTest#convertsImageAndRunsOcr). This workflow:
-#   1. `probe` — a fast, build-free diagnostic that establishes, at the shell
-#      level, whether ImageMagick can actually turn a PNG into a PDF on this
-#      runner (and what tooling it needs). It never fails the run.
-#   2. `conversion-test` — the real gate: builds the native lib and runs the
-#      full ConversionTest with `-PforceImageConversion=true`, so the image
-#      case is exercised instead of skipped.
-# Once this is green, the fix folds back into conversion-tests.yml and the
-# Win/ARM64 skip is removed.
+# fully exercised: Windows on ARM64. The image -> PDF path used to be skipped
+# (see ConversionTest#convertsImageAndRunsOcr) because Chocolatey only ships an
+# x64 ImageMagick (emulated) and pulling Ghostscript in alongside it hangs the
+# installer under emulation. ImageMagick writes a raster -> PDF natively (no
+# Ghostscript needed), so the fix is simply to use a NATIVE ARM64 ImageMagick
+# build (./.github/actions/imagemagick-arm64).
+#
+#   1. `probe` — fast, build-free diagnostic: install native ARM64 ImageMagick
+#      and confirm, at the shell level, that it turns the test PNG into a PDF.
+#   2. `conversion-test` — the real gate: build the native lib and run the full
+#      ConversionTest with `-PforceImageConversion=true`, so the image case is
+#      exercised instead of skipped.
+#
+# Once green, the native-ARM64 ImageMagick install folds into conversion-tests.yml
+# and the Win/ARM64 skip is removed.
 
 on:
   workflow_dispatch:
@@ -21,14 +25,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  OS: windows-11-arm
-  TARGET: aarch64-pc-windows-msvc
-  CLASSIFIER: windows-aarch64
 
 jobs:
   # --------------------------------------------------------------------------
-  # Fast, build-free diagnostic: can ImageMagick do PNG -> PDF here, and how?
-  # Everything is best-effort (continue-on-error) — this job reports, never gates.
+  # Fast, build-free diagnostic: can native ARM64 ImageMagick do PNG -> PDF here?
   # --------------------------------------------------------------------------
   probe:
     name: ImageMagick probe (windows-aarch64)
@@ -42,17 +42,8 @@ jobs:
           Write-Host "PROCESSOR_ARCHITECTURE = $env:PROCESSOR_ARCHITECTURE"
           Write-Host "PROCESSOR_ARCHITEW6432 = $env:PROCESSOR_ARCHITEW6432"
 
-      - name: Install ImageMagick + Ghostscript
-        shell: pwsh
-        run: choco install imagemagick ghostscript -y --no-progress
-
-      - name: Refresh PATH
-        shell: pwsh
-        run: |
-          Import-Module "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1" -ErrorAction SilentlyContinue
-          if (Get-Command refreshenv -ErrorAction SilentlyContinue) { refreshenv }
-          # Persist the (possibly updated) PATH to later steps.
-          "PATH=$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Install ImageMagick (native ARM64)
+        uses: ./.github/actions/imagemagick-arm64
 
       - name: Tool discovery
         if: always()
@@ -60,19 +51,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          Write-Host "== Get-Command magick / convert / gs / gswin64c =="
-          Get-Command magick, convert, gs, gswin64c, gswin32c -ErrorAction SilentlyContinue |
-            Select-Object Name, Source | Format-Table -AutoSize
-          Write-Host "`n== magick -version =="
-          & magick -version 2>&1
+          Write-Host "== Get-Command magick =="
+          Get-Command magick -ErrorAction SilentlyContinue | Select-Object Name, Source | Format-Table -AutoSize
           Write-Host "`n== magick -list configure (DELEGATES / FEATURES) =="
           & magick -list configure 2>&1 | Select-String -Pattern 'DELEGATES|FEATURES'
-          Write-Host "`n== magick -list delegate (pdf / ps) =="
-          & magick -list delegate 2>&1 | Select-String -Pattern 'pdf|ps|gs' -CaseSensitive:$false
 
       - name: Probe PNG -> PDF (magick)
-        if: always()
-        continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
@@ -80,43 +64,24 @@ jobs:
           Write-Host "Converting $img -> probe-magick.pdf ..."
           & magick "$img" -density 150 -units PixelsPerInch probe-magick.pdf 2>&1
           Write-Host "magick exit code: $LASTEXITCODE"
-          if (Test-Path probe-magick.pdf) {
-            $bytes = [System.IO.File]::ReadAllBytes('probe-magick.pdf')
-            $head = -join ($bytes[0..4] | ForEach-Object { [char]$_ })
-            Write-Host "probe-magick.pdf size=$($bytes.Length) header=[$head]"
-            if ($head -ne '%PDF-') { Write-Host '::warning::probe-magick.pdf is not a valid PDF' }
-          } else {
-            Write-Host '::warning::magick produced no PDF'
-          }
+          if (-not (Test-Path probe-magick.pdf)) { Write-Error "magick produced no PDF"; exit 1 }
+          $bytes = [System.IO.File]::ReadAllBytes('probe-magick.pdf')
+          $head = -join ($bytes[0..4] | ForEach-Object { [char]$_ })
+          Write-Host "probe-magick.pdf size=$($bytes.Length) header=[$head]"
+          if ($head -ne '%PDF-') { Write-Error "probe-magick.pdf is not a valid PDF"; exit 1 }
 
-      - name: Probe PNG -> PDF (convert, IM v6 fallback)
-        if: always()
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $img = "lib/src/test/resources/receipt.png"
-          & convert "$img" -density 150 -units PixelsPerInch probe-convert.pdf 2>&1
-          Write-Host "convert exit code: $LASTEXITCODE"
-          if (Test-Path probe-convert.pdf) {
-            Write-Host "probe-convert.pdf size=$((Get-Item probe-convert.pdf).Length)"
-          }
-
-      - name: Upload probe PDFs
+      - name: Upload probe PDF
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: win-arm64-probe-pdfs
-          path: |
-            probe-magick.pdf
-            probe-convert.pdf
+          name: win-arm64-probe-pdf
+          path: probe-magick.pdf
           if-no-files-found: ignore
 
   # --------------------------------------------------------------------------
   # The real gate: build the native lib and run ConversionTest with the image
-  # case forced on. Mirrors conversion-tests.yml's windows-arm leg, plus the
-  # extra tooling (Ghostscript) and a warm-up to defuse cold x64-emulation
-  # launch latency hitting LiteParse's 5s tool-probe timeout.
+  # case forced on. Mirrors conversion-tests.yml's windows-arm leg, but with a
+  # native ARM64 ImageMagick (no Ghostscript) plus a warm-up guard.
   # --------------------------------------------------------------------------
   conversion-test:
     name: Forced conversion test (windows-aarch64)
@@ -140,11 +105,14 @@ jobs:
       - name: Install Ninja
         run: choco install ninja -y
 
-      - name: Conversion tools (LibreOffice + ImageMagick + Ghostscript)
+      - name: Install LibreOffice
         shell: pwsh
         run: |
-          choco install libreoffice-fresh imagemagick ghostscript -y --no-progress
+          choco install libreoffice-fresh -y --no-progress
           "C:\Program Files\LibreOffice\program" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install ImageMagick (native ARM64)
+        uses: ./.github/actions/imagemagick-arm64
 
       - uses: actions/cache@v4
         with:
@@ -165,20 +133,20 @@ jobs:
         shell: pwsh
         run: pwsh scripts/stage-natives.ps1 -Target aarch64-pc-windows-msvc -Classifier windows-aarch64 -OutDir native-staging/windows-aarch64
 
-      - name: Warm up ImageMagick (prime x64 emulation cache)
+      - name: Warm up ImageMagick
         if: always()
         continue-on-error: true
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          1..2 | ForEach-Object { & magick -version > $null 2>&1 }
+          1..2 | ForEach-Object { & magick -version > $null 2>&1; Start-Sleep -Milliseconds 500 }
           Write-Host "ImageMagick warmed up"
 
       - name: Tool presence on PATH
         shell: bash
         run: |
           echo "On PATH:"
-          command -v soffice libreoffice magick convert gs gswin64c 2>/dev/null || true
+          command -v soffice libreoffice magick convert 2>/dev/null || true
 
       - name: Run conversion tests (image case forced on)
         shell: bash
