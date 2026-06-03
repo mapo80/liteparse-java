@@ -28,9 +28,9 @@ jobs:
           - { os: windows-11-arm,   target: aarch64-pc-windows-msvc,   classifier: windows-aarch64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: liberica
           java-version: "17"
@@ -83,7 +83,7 @@ jobs:
           choco install libreoffice-fresh imagemagick -y --no-progress
           "C:\Program Files\LibreOffice\program" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: conversion-report-${{ matrix.classifier }}
           path: lib/build/reports/tests/test

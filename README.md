@@ -49,14 +49,25 @@ This binding wraps the core `liteparse` Rust crate via JNI, exactly like the off
 ## Installation
 
 LiteParse for Java is distributed as **GitHub Release assets** (not on Maven Central). Each
-release ships a **self-contained, single-jar bundle per platform**: it already contains the
-Java API, its dependency (Jackson, shaded), and the native binaries (JNI library + PDFium +
-`eng.traineddata`). Download the one for your platform, put it on the classpath, done.
+release ships **self-contained bundle jars** that already contain the Java API, its dependency
+(Jackson, shaded), and the native binaries (JNI library + PDFium + `eng.traineddata`). Drop one on
+the classpath — no other dependencies, no native setup.
 
-### Self-contained bundle (recommended)
+### All-platforms bundle (single jar — simplest)
 
-Pick `liteparse-java-bundle-<version>-<classifier>.jar` for your platform from the
-[latest release](https://github.com/mapo80/liteparse-java/releases/latest):
+`liteparse-java-bundle-<version>-all-platforms.jar` contains the native binaries for **all six
+platforms** (Linux/macOS/Windows × x86_64/arm64). One download runs everywhere — the loader picks
+the right native for the current OS/arch at runtime. Ideal when you don't want to match the platform
+at build time (CI matrices, multi-OS deployments, "just works" distribution). ~57 MB.
+
+```bash
+java -cp "liteparse-java-bundle-<version>-all-platforms.jar:your-app.jar" com.example.App
+```
+
+### Per-platform bundle (smaller download)
+
+If size matters, pick the single-platform `liteparse-java-bundle-<version>-<classifier>.jar` (~13 MB)
+for your platform from the [latest release](https://github.com/mapo80/liteparse-java/releases/latest):
 
 | Platform | classifier |
 |----------|------------|

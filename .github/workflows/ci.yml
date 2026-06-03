@@ -20,7 +20,7 @@ jobs:
     name: Rust lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt, clippy
@@ -47,9 +47,9 @@ jobs:
           - { os: windows-11-arm,   target: aarch64-pc-windows-msvc,   classifier: windows-aarch64 }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           # Liberica provides JDK 17 for all six platforms, including Windows/ARM64
           # (Temurin has no Windows/ARM64 JDK 17 build).
@@ -77,7 +77,7 @@ jobs:
         run: echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
         shell: bash
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry

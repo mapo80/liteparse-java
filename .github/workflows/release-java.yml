@@ -22,7 +22,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Validate version
         run: |
           GRADLE_VERSION=$(grep -E '^version=' gradle.properties | cut -d= -f2)
@@ -47,9 +47,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.classifier }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: liberica
           java-version: "17"
@@ -100,7 +100,7 @@ jobs:
           choco install libreoffice-fresh imagemagick -y --no-progress
           "C:\Program Files\LibreOffice\program" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -132,7 +132,7 @@ jobs:
         run: ./gradlew :lib:test -PnativeDir="${{ github.workspace }}/native-staging/${{ matrix.classifier }}"
 
       - name: Upload native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.classifier }}
           path: native-staging/${{ matrix.classifier }}
@@ -143,15 +143,15 @@ jobs:
     runs-on: ubuntu-latest
     name: Assemble & publish
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: liberica
           java-version: "17"
 
       - name: Download native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: native-*
           path: artifacts
@@ -168,25 +168,38 @@ jobs:
           find native-staging -maxdepth 1 -mindepth 1 -type d | sort
           find native-staging -type f | sort
 
-      - name: Assemble jars (API + per-platform self-contained bundles + sources + javadoc)
+      - name: Assemble jars (API + per-platform + all-platforms bundles + sources + javadoc)
         run: ./gradlew :lib:assemble -x test
 
       - name: List built artifacts
-        run: ls -la lib/build/libs
+        run: ls -lh lib/build/libs
 
       - name: Create git tag
         if: ${{ !inputs.dry-run }}
         run: |
+          if git ls-remote --tags origin "java-v${{ inputs.version }}" | grep -q .; then
+            echo "::error::tag java-v${{ inputs.version }} already exists — bump the version or delete the tag"
+            exit 1
+          fi
           git tag "java-v${{ inputs.version }}"
           git push origin "java-v${{ inputs.version }}"
 
       - name: Create GitHub Release
         if: ${{ !inputs.dry-run }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: java-v${{ inputs.version }}
           name: "Java v${{ inputs.version }}"
           generate_release_notes: true
+          body: |
+            ### Artifacts
+            - **`liteparse-java-bundle-${{ inputs.version }}-all-platforms.jar`** — single jar with
+              native binaries for **all 6 platforms** (Linux/macOS/Windows × x86_64/arm64). One
+              download runs everywhere; the loader selects the right native at runtime.
+            - `liteparse-java-bundle-${{ inputs.version }}-<classifier>.jar` — smaller per-platform
+              bundles (`linux-x86_64`, `linux-aarch64`, `macos-x86_64`, `macos-aarch64`,
+              `windows-x86_64`, `windows-aarch64`).
+            - `liteparse-java-${{ inputs.version }}.jar` (plain API), `…-sources.jar`, `…-javadoc.jar`.
           files: lib/build/libs/*.jar
 
       - name: Dry-run summary
@@ -194,4 +207,4 @@ jobs:
         run: |
           echo "## Dry run — would release java-v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
           echo "### Artifacts:" >> $GITHUB_STEP_SUMMARY
-          for f in lib/build/libs/*.jar; do echo "- $(basename "$f")" >> $GITHUB_STEP_SUMMARY; done
+          for f in lib/build/libs/*.jar; do echo "- $(basename "$f") ($(du -h "$f" | cut -f1))" >> $GITHUB_STEP_SUMMARY; done

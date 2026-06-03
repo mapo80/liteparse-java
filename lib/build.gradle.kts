@@ -77,10 +77,12 @@ val stagingDir = rootProject.layout.projectDirectory.dir("native-staging").asFil
 val bundleJarTasks = mutableListOf<TaskProvider<ShadowJar>>()
 
 if (stagingDir.isDirectory) {
-    stagingDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach { dir ->
-        val classifier = dir.name
+    val platformDirs = stagingDir.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name } ?: emptyList()
+    val manifestTasks = linkedMapOf<String, TaskProvider<Task>>()
 
-        val manifestTask = tasks.register("nativeManifest-$classifier") {
+    platformDirs.forEach { dir ->
+        val classifier = dir.name
+        manifestTasks[classifier] = tasks.register("nativeManifest-$classifier") {
             val outFile = layout.buildDirectory.file("native-manifests/$classifier/manifest")
             outputs.file(outFile)
             doLast {
@@ -94,7 +96,12 @@ if (stagingDir.isDirectory) {
                 f.writeText(names.joinToString("\n"))
             }
         }
+    }
 
+    // Per-platform self-contained bundles.
+    platformDirs.forEach { dir ->
+        val classifier = dir.name
+        val manifestTask = manifestTasks.getValue(classifier)
         val bundle = tasks.register<ShadowJar>("bundleJar-$classifier") {
             group = "build"
             description = "Self-contained jar for $classifier (classes + Jackson + natives)."
@@ -107,6 +114,15 @@ if (stagingDir.isDirectory) {
             // Relocate Jackson so the bundle never clashes with a consumer's own copy.
             relocate("com.fasterxml.jackson", "io.liteparse.shaded.jackson")
             mergeServiceFiles()
+            // Mirror the excludes the shadow plugin auto-applies only to the `shadowJar` task (a
+            // manually registered ShadowJar does not inherit them); otherwise the relocated Jackson
+            // module-info survives and misdescribes the jar.
+            exclude("module-info.class")
+            exclude("META-INF/versions/**/module-info.class")
+            exclude("META-INF/INDEX.LIST")
+            exclude("META-INF/*.SF")
+            exclude("META-INF/*.DSA")
+            exclude("META-INF/*.RSA")
 
             from(dir) { into("io/liteparse/native/$classifier") }
             from(manifestTask.map { it.outputs.files.singleFile }) {
@@ -114,6 +130,41 @@ if (stagingDir.isDirectory) {
             }
         }
         bundleJarTasks.add(bundle)
+    }
+
+    // Single cross-platform bundle: the Java classes + Jackson + native binaries for EVERY platform.
+    // liteparse-java selects the right native at runtime, so one download runs everywhere — the same
+    // convenience artifact liteparse-markdown ships. Assembled only when all platform staging dirs
+    // are present (i.e. in the release workflow's assemble-publish job).
+    if (platformDirs.isNotEmpty()) {
+        val allBundle = tasks.register<ShadowJar>("bundleJar-all-platforms") {
+            group = "build"
+            description = "Self-contained jar with native binaries for ALL platforms (single download)."
+            archiveBaseName.set("liteparse-java-bundle")
+            archiveClassifier.set("all-platforms")
+
+            from(sourceSets["main"].output)
+            configurations = listOf(project.configurations["runtimeClasspath"])
+            relocate("com.fasterxml.jackson", "io.liteparse.shaded.jackson")
+            mergeServiceFiles()
+            exclude("module-info.class")
+            exclude("META-INF/versions/**/module-info.class")
+            exclude("META-INF/INDEX.LIST")
+            exclude("META-INF/*.SF")
+            exclude("META-INF/*.DSA")
+            exclude("META-INF/*.RSA")
+
+            platformDirs.forEach { dir ->
+                val classifier = dir.name
+                val manifestTask = manifestTasks.getValue(classifier)
+                dependsOn(manifestTask)
+                from(dir) { into("io/liteparse/native/$classifier") }
+                from(manifestTask.map { it.outputs.files.singleFile }) {
+                    into("io/liteparse/native/$classifier")
+                }
+            }
+        }
+        bundleJarTasks.add(allBundle)
     }
 }
 
