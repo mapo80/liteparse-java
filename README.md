@@ -1,5 +1,17 @@
 # LiteParse for Java
 
+[![CI](https://github.com/mapo80/liteparse-java/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mapo80/liteparse-java/actions/workflows/ci.yml)
+[![Conversion tests](https://github.com/mapo80/liteparse-java/actions/workflows/conversion-tests.yml/badge.svg?branch=main)](https://github.com/mapo80/liteparse-java/actions/workflows/conversion-tests.yml)
+[![Release](https://github.com/mapo80/liteparse-java/actions/workflows/release-java.yml/badge.svg)](https://github.com/mapo80/liteparse-java/actions/workflows/release-java.yml)
+[![Latest release](https://img.shields.io/github/v/release/mapo80/liteparse-java?sort=semver)](https://github.com/mapo80/liteparse-java/releases/latest)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-17%2B-orange.svg)](https://adoptium.net/)
+
+![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows%20%C2%B7%20x86__64%20%7C%20arm64-lightgrey.svg)
+
+> CI builds and tests the JNI binding on **all six targets** (Linux/macOS/Windows × x86_64/arm64);
+> the conversion suite verifies **PDF, image→OCR, and Office→PDF** conversion on each of them.
+
 Java/JNI binding for [**LiteParse**](https://github.com/run-llama/liteparse) — a fast,
 local, open-source document parser written in Rust. It extracts **layout-aware text with
 bounding boxes** from PDFs, Office documents and images, renders **page screenshots**, and
