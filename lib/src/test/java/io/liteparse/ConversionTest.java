@@ -3,6 +3,7 @@ package io.liteparse;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.File;
@@ -53,6 +54,12 @@ class ConversionTest {
     @Test
     @Timeout(value = 180, unit = TimeUnit.SECONDS)
     void convertsImageAndRunsOcr() throws Exception {
+        // ImageMagick's PDF delegate (Ghostscript) is not reliably available on the
+        // Windows/ARM64 runner (x64 emulation), so image->PDF is skipped there.
+        assumeFalse(IS_WINDOWS && (System.getProperty("os.arch", "").toLowerCase(Locale.ROOT)
+                        .contains("aarch64") || System.getProperty("os.arch", "").toLowerCase(Locale.ROOT)
+                        .contains("arm")),
+                "image->PDF conversion is unreliable on Windows/ARM64");
         assumeTrue(onPath("magick", "convert"),
                 "ImageMagick not on PATH — skipping image conversion test");
         Path image = extract("receipt.png");
