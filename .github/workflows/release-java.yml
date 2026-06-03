@@ -51,7 +51,7 @@ jobs:
 
       - uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: liberica
           java-version: "17"
 
       - uses: dtolnay/rust-toolchain@1.95.0
@@ -65,6 +65,10 @@ jobs:
       - name: System dependencies (macOS)
         if: runner.os == 'macOS'
         run: brew install tesseract leptonica
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y
 
       - name: Force Ninja generator (Windows)
         if: runner.os == 'Windows'
@@ -115,7 +119,7 @@ jobs:
 
       - uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: liberica
           java-version: "17"
 
       - name: Download native artifacts
