@@ -1,0 +1,174 @@
+name: Release - Java
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (must match gradle.properties, e.g. 2.0.5)"
+        required: true
+        type: string
+      dry-run:
+        description: "Build & assemble but do not publish"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate version
+        run: |
+          GRADLE_VERSION=$(grep -E '^version=' gradle.properties | cut -d= -f2)
+          if [ "$GRADLE_VERSION" != "${{ inputs.version }}" ]; then
+            echo "::error::version mismatch: gradle.properties=$GRADLE_VERSION input=${{ inputs.version }}"
+            exit 1
+          fi
+          echo "Version validated: ${{ inputs.version }}"
+
+  build-native:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,     target: aarch64-apple-darwin,      classifier: macos-aarch64 }
+          - { os: macos-26-intel,   target: x86_64-apple-darwin,       classifier: macos-x86_64 }
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu,  classifier: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, classifier: linux-aarch64 }
+          - { os: windows-latest,   target: x86_64-pc-windows-msvc,    classifier: windows-x86_64 }
+          - { os: windows-11-arm,   target: aarch64-pc-windows-msvc,   classifier: windows-aarch64 }
+    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.classifier }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: System dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libtesseract-dev libleptonica-dev
+
+      - name: System dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica
+
+      - name: Force Ninja generator (Windows)
+        if: runner.os == 'Windows'
+        run: echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
+        shell: bash
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/pdfium-rs
+            ~/Library/Caches/pdfium-rs
+            ${{ runner.os == 'Windows' && format('{0}\pdfium-rs', env.LOCALAPPDATA) || '' }}
+            rust/target
+          key: ${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Build native library (release, with Tesseract)
+        working-directory: rust
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage natives (Unix)
+        if: runner.os != 'Windows'
+        run: bash scripts/stage-natives.sh ${{ matrix.target }} ${{ matrix.classifier }} native-staging/${{ matrix.classifier }}
+
+      - name: Stage natives (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh scripts/stage-natives.ps1 -Target ${{ matrix.target }} -Classifier ${{ matrix.classifier }} -OutDir native-staging/${{ matrix.classifier }}
+
+      - name: Smoke test
+        shell: bash
+        run: ./gradlew :lib:test -PnativeDir="${{ github.workspace }}/native-staging/${{ matrix.classifier }}"
+
+      - name: Upload native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.classifier }}
+          path: native-staging/${{ matrix.classifier }}
+          if-no-files-found: error
+
+  assemble-publish:
+    needs: build-native
+    runs-on: ubuntu-latest
+    name: Assemble & publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Download native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          path: artifacts
+
+      - name: Reassemble native-staging
+        run: |
+          mkdir -p native-staging
+          for d in artifacts/native-*; do
+            cls="${d#artifacts/native-}"
+            mkdir -p "native-staging/$cls"
+            cp -r "$d"/. "native-staging/$cls/"
+          done
+          echo "Staged platforms:"
+          find native-staging -maxdepth 1 -mindepth 1 -type d | sort
+          find native-staging -type f | sort
+
+      - name: Assemble jars (API + per-platform native jars + sources + javadoc)
+        run: ./gradlew :lib:assemble -x test
+
+      - name: List built artifacts
+        run: ls -la lib/build/libs
+
+      - name: Publish to Maven Central
+        if: ${{ !inputs.dry-run }}
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository -x test
+
+      - name: Create git tag
+        if: ${{ !inputs.dry-run }}
+        run: |
+          git tag "java-v${{ inputs.version }}"
+          git push origin "java-v${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        if: ${{ !inputs.dry-run }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: java-v${{ inputs.version }}
+          name: "Java v${{ inputs.version }}"
+          generate_release_notes: true
+          files: lib/build/libs/*.jar
+
+      - name: Dry-run summary
+        if: ${{ inputs.dry-run }}
+        run: |
+          echo "## Dry run — would release java-v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts:" >> $GITHUB_STEP_SUMMARY
+          for f in lib/build/libs/*.jar; do echo "- $(basename "$f")" >> $GITHUB_STEP_SUMMARY; done

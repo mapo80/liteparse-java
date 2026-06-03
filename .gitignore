@@ -1,0 +1,22 @@
+# Rust
+/rust/target/
+**/*.rs.bk
+
+# Gradle / Java
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+
+# Staged native artifacts (produced by CI / local build, never committed)
+/lib/src/main/resources/io/liteparse/native/
+/native-staging/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# OS / tmp
+*.log

@@ -1,0 +1,38 @@
+[package]
+name = "liteparse-jni"
+version = "2.0.5"
+edition = "2021"
+license = "Apache-2.0"
+description = "JNI native bindings for LiteParse (Java)"
+repository = "https://github.com/mapo80/liteparse-java"
+publish = false
+
+[lib]
+name = "liteparse_jni"
+crate-type = ["cdylib"]
+
+[features]
+default = ["tesseract"]
+# Bundled Tesseract OCR (compiled from source by `liteparse`'s `tesseract` feature).
+# Disable with --no-default-features for a lighter, faster build (HTTP OCR only).
+tesseract = ["liteparse/tesseract"]
+
+[dependencies]
+# Core LiteParse library, pulled prebuilt-source from crates.io (NOT a path dep,
+# so this repo stays decoupled from the upstream monorepo). Pinned to match the
+# binding version. PDFium itself is downloaded prebuilt by liteparse-pdfium-sys.
+liteparse = { version = "=2.0.5", default-features = false }
+
+# Direct dependency on pdfium-sys so this crate receives `DEP_PDFIUM_LIB_PATH`
+# from its build script (used for rpath + locating the prebuilt libpdfium to bundle).
+liteparse-pdfium-sys = "1.1"
+
+jni = "0.21"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+[profile.release]
+# Smaller, self-contained shared library.
+lto = "thin"
+strip = true
