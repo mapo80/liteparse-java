@@ -107,7 +107,8 @@ jobs:
         shell: pwsh
         run: pwsh scripts/stage-natives.ps1 -Target ${{ matrix.target }} -Classifier ${{ matrix.classifier }} -OutDir native-staging/${{ matrix.classifier }}
 
-      - name: Tool presence (no --version: soffice --version hangs on Windows)
+      # Note: we do NOT run `soffice --version` because it hangs on Windows.
+      - name: Tool presence on PATH
         shell: bash
         run: |
           echo "On PATH:"
