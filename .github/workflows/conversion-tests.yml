@@ -1,0 +1,126 @@
+name: Conversion tests
+
+# Verifies end-to-end format conversion on all six platforms:
+#   PDF (native), image -> PDF (ImageMagick) + OCR (Tesseract), Office -> PDF (LibreOffice).
+# Heavy (installs LibreOffice and rebuilds the native lib), so it runs on demand and weekly,
+# not on every push.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  conversion:
+    name: ${{ matrix.classifier }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest,     target: aarch64-apple-darwin,      classifier: macos-aarch64 }
+          - { os: macos-26-intel,   target: x86_64-apple-darwin,       classifier: macos-x86_64 }
+          - { os: ubuntu-latest,    target: x86_64-unknown-linux-gnu,  classifier: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, classifier: linux-aarch64 }
+          - { os: windows-latest,   target: x86_64-pc-windows-msvc,    classifier: windows-x86_64 }
+          - { os: windows-11-arm,   target: aarch64-pc-windows-msvc,   classifier: windows-aarch64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: liberica
+          java-version: "17"
+
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: ${{ matrix.target }}
+
+      # --- Build dependencies (Tesseract from source) -----------------------
+      - name: Build deps (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libtesseract-dev libleptonica-dev
+
+      - name: Build deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tesseract leptonica
+
+      - name: Force Ninja generator (Windows)
+        if: runner.os == 'Windows'
+        run: echo "CMAKE_GENERATOR=Ninja" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja -y
+
+      # --- Conversion tools (LibreOffice + ImageMagick) ---------------------
+      - name: Conversion tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y libreoffice imagemagick
+          # Allow ImageMagick to write PDF (Debian/Ubuntu deny it by default).
+          for p in /etc/ImageMagick-6/policy.xml /etc/ImageMagick-7/policy.xml; do
+            if [ -f "$p" ]; then
+              sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' "$p" || true
+            fi
+          done
+
+      - name: Conversion tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install imagemagick
+          brew install --cask libreoffice
+          echo "/Applications/LibreOffice.app/Contents/MacOS" >> "$GITHUB_PATH"
+
+      - name: Conversion tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install libreoffice-fresh imagemagick -y --no-progress
+          "C:\Program Files\LibreOffice\program" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/pdfium-rs
+            ~/Library/Caches/pdfium-rs
+            ${{ runner.os == 'Windows' && format('{0}\pdfium-rs', env.LOCALAPPDATA) || '' }}
+            rust/target
+          key: ${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('rust/Cargo.lock') }}
+
+      - name: Build native library (release, with Tesseract)
+        working-directory: rust
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage natives (Unix)
+        if: runner.os != 'Windows'
+        run: bash scripts/stage-natives.sh ${{ matrix.target }} ${{ matrix.classifier }} native-staging/${{ matrix.classifier }}
+
+      - name: Stage natives (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: pwsh scripts/stage-natives.ps1 -Target ${{ matrix.target }} -Classifier ${{ matrix.classifier }} -OutDir native-staging/${{ matrix.classifier }}
+
+      - name: Tool versions
+        shell: bash
+        run: |
+          echo "soffice:"; (soffice --version || libreoffice --version) 2>&1 | head -1 || echo "  not found"
+          echo "imagemagick:"; (magick --version || convert --version) 2>&1 | head -1 || echo "  not found"
+
+      - name: Run conversion tests
+        shell: bash
+        run: ./gradlew :lib:test --tests 'io.liteparse.ConversionTest' -PnativeDir="${{ github.workspace }}/native-staging/${{ matrix.classifier }}"
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-report-${{ matrix.classifier }}
+          path: lib/build/reports/tests/test
+          if-no-files-found: ignore

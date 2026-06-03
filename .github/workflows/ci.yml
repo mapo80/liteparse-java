@@ -103,4 +103,4 @@ jobs:
 
       - name: Test (JUnit) + build self-contained bundle jar
         shell: bash
-        run: ./gradlew :lib:test :lib:bundleJar-${{ matrix.classifier }} -PnativeDir="${{ github.workspace }}/native-staging/${{ matrix.classifier }}"
+        run: ./gradlew :lib:test :lib:bundleJar-${{ matrix.classifier }} -PexcludeTags=conversion -PnativeDir="${{ github.workspace }}/native-staging/${{ matrix.classifier }}"

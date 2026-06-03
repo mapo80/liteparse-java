@@ -35,7 +35,13 @@ dependencies {
 }
 
 tasks.test {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        // Exclude JUnit tags via `-PexcludeTags=conversion` (the main CI excludes the
+        // conversion suite, which needs LibreOffice/ImageMagick — see conversion-tests.yml).
+        (findProperty("excludeTags") as String?)
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.forEach { excludeTags(it) }
+    }
     // For local dev / CI: point at a directory that already contains the native
     // library + libpdfium (+ tessdata). Passed via `-PnativeDir=...`.
     (findProperty("nativeDir") as String?)?.let { systemProperty("liteparse.native.dir", it) }
