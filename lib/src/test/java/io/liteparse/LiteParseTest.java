@@ -89,8 +89,8 @@ class LiteParseTest {
 
     @Test
     void searchesItems() {
-        TextItem a = new TextItem("Hello", 0, 0, 10, 5, "Arial", 12.0, 1.0);
-        TextItem b = new TextItem("World", 11, 0, 10, 5, "Arial", 12.0, 1.0);
+        TextItem a = new TextItem("Hello", 0, 0, 10, 5, "Arial", 12.0, null, null, 1.0);
+        TextItem b = new TextItem("World", 11, 0, 10, 5, "Arial", 12.0, null, null, 1.0);
         List<TextItem> merged = LiteParse.searchItems(List.of(a, b), "Hello World", false);
         assertNotNull(merged);
     }

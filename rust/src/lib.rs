@@ -154,6 +154,10 @@ struct DtoTextItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     font_size: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    font_weight: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    font_flags: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     confidence: Option<f64>,
 }
 
@@ -167,6 +171,8 @@ impl DtoTextItem {
             height: item.height as f64,
             font_name: item.font_name.clone(),
             font_size: item.font_size.map(|v| v as f64),
+            font_weight: item.font_weight,
+            font_flags: item.font_flags,
             confidence: item.confidence.map(|v| v as f64).or(Some(1.0)),
         }
     }
@@ -180,6 +186,8 @@ impl DtoTextItem {
             height: self.height as f32,
             font_name: self.font_name.clone(),
             font_size: self.font_size.map(|v| v as f32),
+            font_weight: self.font_weight,
+            font_flags: self.font_flags,
             confidence: self.confidence.map(|v| v as f32),
             ..Default::default()
         }
